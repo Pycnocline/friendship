@@ -3,13 +3,13 @@
 	"id": "friendship",
 	"version": "${version}",
 	"name": "friendship",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Let us become friends!",
 	"authors": [
 		"Pycnocline"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/Pycnocline/friendship",
+		"sources": "https://github.com/Pycnocline/friendship"
 	},
 	"license": "MIT",
 	"icon": "assets/friendship/icon.png",

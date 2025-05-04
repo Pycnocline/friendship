@@ -16,6 +16,7 @@ public class FriendshipClient implements ClientModInitializer {
 	private static final String CMD_BARITONE = "!baritone #";
 	private static final String CMD_CMD = "!cmd /";
 	private static final String CMD_LIST = "!list";
+	private static final String CMD_DROP = "!drop";
 
 
 	@Override
@@ -38,6 +39,8 @@ public class FriendshipClient implements ClientModInitializer {
 				handleUseCommand(client, messageContent);
 			} else if (messageContent.contains(CMD_LIST)) {
 				handleListCommand(client);
+			} else if (messageContent.contains(CMD_DROP)) {
+				handleDropCommand(client);
 			}
 
 
@@ -48,9 +51,7 @@ public class FriendshipClient implements ClientModInitializer {
 	// 打开背包
 	private void handleOpenInventoryCommand(MinecraftClient client) {
 		System.out.println("Executing command '" + CMD_OPEN_INVENTORY + "'.");
-		// 确保操作在客户端主线程执行
 		client.execute(() -> {
-			// 在 execute 内部再次检查 player 是否为 null
 			if (client.player != null) {
 				// 如果当前在聊天界面，先关闭聊天界面再打开背包
 				if (client.currentScreen instanceof ChatScreen) {
@@ -67,7 +68,6 @@ public class FriendshipClient implements ClientModInitializer {
 	// hello
 	private void handleSayHelloCommand(MinecraftClient client) {
 		System.out.println("Executing command '" + CMD_HELLO + "'.");
-		// 确保操作在客户端主线程执行
 		client.execute(() -> {
 			if (client.player != null) {
 				client.player.networkHandler.sendChatMessage("Hello from friendship!");
@@ -101,7 +101,7 @@ public class FriendshipClient implements ClientModInitializer {
 
 	// 使用指令
 	private void handleUseCommand(MinecraftClient client, String inputString) {
-		System.out.println("Executing command '" + CMD_BARITONE + "'.");
+		System.out.println("Executing command '" + CMD_CMD + "'.");
 		client.execute(() -> {
 			if (client.player != null) {
 
@@ -132,7 +132,6 @@ public class FriendshipClient implements ClientModInitializer {
 				int totalSlots = inventory.size();
 
 				// 遍历背包的所有槽位 (从索引 0 到 totalSlots - 1)
-				// 槽位索引大致分布：0-4 合成/结果, 5-8 装备, 9-35 主背包, 36-44 快捷栏
 				for (int i = 0; i < totalSlots; i++) {
 					// 获取当前槽位的物品堆栈
 					ItemStack stack = inventory.getStack(i);
@@ -160,4 +159,17 @@ public class FriendshipClient implements ClientModInitializer {
 		});
 	}
 
+
+	// 丢下物品
+	private void handleDropCommand(MinecraftClient client) {
+		System.out.println("Executing command '" + CMD_DROP + "'.");
+		client.execute(() -> {
+			if (client.player != null) {
+
+				System.out.println("[friendship]function success: !drop");
+			} else {
+				System.out.println("[friendship]Error: Player is null when trying to use drop command.");
+			}
+		});
+	}
 }
