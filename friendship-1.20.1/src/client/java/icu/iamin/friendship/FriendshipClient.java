@@ -10,6 +10,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.text.Text;
 
 
 public class FriendshipClient implements ClientModInitializer {
@@ -73,7 +74,7 @@ public class FriendshipClient implements ClientModInitializer {
 		System.out.println("Executing command '" + CMD_HELLO + "'.");
 		client.execute(() -> {
 			if (client.player != null) {
-				client.player.networkHandler.sendChatMessage("Hello from friendship!");
+				client.player.networkHandler.sendChatMessage("[friendship]Hello from friendship!");
 				System.out.println("[friendship]function success: !hello");
 			} else {
 				System.out.println("[friendship]Error: Player is null when trying to send message in execute block.");
@@ -168,7 +169,13 @@ public class FriendshipClient implements ClientModInitializer {
 		client.execute(() -> {
 			if (client.player != null) {
 				// 去前缀，分割
-				String argsString = inputString.substring(CMD_DROP.length());
+				String argsString;
+				int cmdIndex = inputString.indexOf(CMD_DROP);
+				if (cmdIndex == -1) {
+					client.player.sendMessage(Text.literal("[friendship]Error: Command not found."), false);
+					return;
+				}
+				argsString = inputString.substring(cmdIndex + CMD_DROP.length()).trim();
 				String[] parts = argsString.split(" ");
 
 				// 检查参数数量是否为偶数且大于0
