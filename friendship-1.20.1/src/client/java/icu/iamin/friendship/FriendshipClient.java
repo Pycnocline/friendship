@@ -7,6 +7,9 @@ import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.slot.SlotActionType;
 
 
 public class FriendshipClient implements ClientModInitializer {
@@ -40,7 +43,7 @@ public class FriendshipClient implements ClientModInitializer {
 			} else if (messageContent.contains(CMD_LIST)) {
 				handleListCommand(client);
 			} else if (messageContent.contains(CMD_DROP)) {
-				handleDropCommand(client);
+				handleDropCommand(client, messageContent);
 			}
 
 
@@ -159,17 +162,92 @@ public class FriendshipClient implements ClientModInitializer {
 		});
 	}
 
-
 	// 丢下物品
-	private void handleDropCommand(MinecraftClient client) {
+	private void handleDropCommand(MinecraftClient client, String inputString) {
 		System.out.println("Executing command '" + CMD_DROP + "'.");
 		client.execute(() -> {
 			if (client.player != null) {
+				// 去前缀，分割
+				String argsString = inputString.substring(CMD_DROP.length());
+				String[] parts = argsString.split(" ");
 
-				System.out.println("[friendship]function success: !drop");
+				// 检查参数数量是否为偶数且大于0
+				if (parts.length == 0 || parts.length % 2 != 0) {
+					client.player.networkHandler.sendChatMessage("[friendship]Error: Syntax error.");
+					return;
+				}
+
+				// 获取当前屏幕处理器和玩家物品栏
+				ScreenHandler currentScreenHandler = client.player.currentScreenHandler;
+				int syncId = currentScreenHandler.syncId;
+				PlayerInventory inventory = client.player.getInventory();
+
+				boolean success = false;
+				for (int i = 0; i < parts.length; i += 2) {
+					int inventorySlot;
+					int amount;
+
+					try {
+						inventorySlot = Integer.parseInt(parts[i]);
+						amount = Integer.parseInt(parts[i + 1]);
+					} catch (NumberFormatException e) {
+						continue;
+					}
+
+					// 检查槽位有效性 (0-40 包括副手)
+					if (inventorySlot < 0 || inventorySlot > 40) {
+						continue;
+					}
+
+					if (amount <= 0) {
+						continue;
+					}
+
+					ItemStack stack = inventory.getStack(inventorySlot);
+					if (stack.isEmpty()) {
+						continue;
+					}
+
+					// 转换物品栏槽位到当前屏幕处理器的槽位编号
+					int screenHandlerSlot = convertInventorySlotToScreenHandler(inventory, inventorySlot, currentScreenHandler);
+					if (screenHandlerSlot == -1) {
+						continue;
+					}
+
+					int amountToDrop = Math.min(amount, stack.getCount());
+					if (amountToDrop <= 0) continue;
+
+					// 执行丢弃操作
+					for (int j = 0; j < amountToDrop; j++) {
+                        if (client.interactionManager != null) {
+                            client.interactionManager.clickSlot(
+                                    syncId,
+                                    screenHandlerSlot,
+                                    0,
+                                    SlotActionType.THROW,
+                                    client.player
+                            );
+                        }
+                    }
+					success = true;
+				}
+
+				if (success) {
+					System.out.println("[friendship]function success: !drop");
+				}
 			} else {
-				System.out.println("[friendship]Error: Player is null when trying to use drop command.");
+				System.out.println("[friendship]Error: Player is null.");
 			}
 		});
+	}
+
+	// 转换物品栏槽位到屏幕处理器中的实际槽位编号
+	private int convertInventorySlotToScreenHandler(PlayerInventory inventory, int slot, ScreenHandler handler) {
+		for (Slot handlerSlot : handler.slots) {
+			if (handlerSlot.inventory == inventory && handlerSlot.getIndex() == slot) {
+				return handlerSlot.id;
+			}
+		}
+		return -1;
 	}
 }
