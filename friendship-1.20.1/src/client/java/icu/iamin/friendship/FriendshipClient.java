@@ -21,6 +21,8 @@ public class FriendshipClient implements ClientModInitializer {
 	private static final String CMD_CMD = "!cmd /";
 	private static final String CMD_LIST = "!list";
 	private static final String CMD_DROP = "!drop";
+	private static final String CMD_DROPALL = "!dropall";
+	private static final String CMD_SWAP = "!swap";
 
 
 	@Override
@@ -43,8 +45,12 @@ public class FriendshipClient implements ClientModInitializer {
 				handleUseCommand(client, messageContent);
 			} else if (messageContent.contains(CMD_LIST)) {
 				handleListCommand(client);
+			} else if (messageContent.contains(CMD_DROPALL)) {
+				handleDropAllCommand(client);
 			} else if (messageContent.contains(CMD_DROP)) {
 				handleDropCommand(client, messageContent);
+			} else if (messageContent.contains(CMD_SWAP)) {
+				handleSwapCommand(client, messageContent);
 			}
 
 
@@ -194,12 +200,8 @@ public class FriendshipClient implements ClientModInitializer {
 					int inventorySlot;
 					int amount;
 
-					try {
-						inventorySlot = Integer.parseInt(parts[i]);
-						amount = Integer.parseInt(parts[i + 1]);
-					} catch (NumberFormatException e) {
-						continue;
-					}
+					inventorySlot = Integer.parseInt(parts[i]);
+					amount = Integer.parseInt(parts[i + 1]);
 
 					// 检查槽位有效性 (0-40 包括副手)
 					if (inventorySlot < 0 || inventorySlot > 40) {
@@ -257,4 +259,104 @@ public class FriendshipClient implements ClientModInitializer {
 		}
 		return -1;
 	}
+
+	// 丢下所有物品
+	private void handleDropAllCommand(MinecraftClient client) {
+		System.out.println("Executing command '" + CMD_DROPALL + "'.");
+        if (client.player != null) {
+			PlayerInventory inventory = client.player.getInventory();
+
+			ScreenHandler handler = client.player.currentScreenHandler;
+			int syncId = handler.syncId;
+
+			boolean success = false;
+			// 遍历所有玩家槽位（0-40）
+			for (int slot = 0; slot <= 40; slot++) {
+				ItemStack stack = inventory.getStack(slot);
+				if (stack.isEmpty()) continue;
+
+				// 转换为当前屏幕处理器的槽位编号
+				int screenSlot = convertInventorySlotToScreenHandler(inventory, slot, handler);
+				if (screenSlot == -1) continue;
+
+				// 执行丢弃操作
+                if (client.interactionManager != null) {
+                    client.interactionManager.clickSlot(
+                            syncId,
+                            screenSlot,
+                            1,
+                            SlotActionType.THROW,
+                            client.player
+                    );
+                }
+                success = true;
+			}
+			if (success) {
+				System.out.println("[friendship]Dropped all items.");
+			}
+		}
+	}
+
+	// 交换物品位置
+	private void handleSwapCommand(MinecraftClient client, String inputString) {
+		client.execute(() -> {
+			if (client.player == null) return;
+
+			// 提取命令参数
+			int cmdIndex = inputString.indexOf(CMD_SWAP);
+			if (cmdIndex == -1) return;
+
+			String argsString = inputString.substring(cmdIndex + CMD_SWAP.length()).trim();
+			String[] parts = argsString.split("\\s+");
+
+			// 参数合法性检查
+			if (parts.length % 2 != 0) {
+				client.player.sendMessage(Text.literal("[friendship]Error: Syntax error."), false);
+				return;
+			}
+
+			ScreenHandler handler = client.player.currentScreenHandler;
+			PlayerInventory inventory = client.player.getInventory();
+			boolean success = false;
+
+			// 遍历所有槽位对
+			for (int i = 0; i < parts.length; i += 2) {
+				try {
+					int slotA = Integer.parseInt(parts[i]);
+					int slotB = Integer.parseInt(parts[i + 1]);
+
+					// 槽位有效性检查（0-40）
+					if (slotA < 0 || slotA > 40 || slotB < 0 || slotB > 40) continue;
+
+					// 转换为屏幕处理器槽位
+					int screenSlotA = convertInventorySlotToScreenHandler(inventory, slotA, handler);
+					int screenSlotB = convertInventorySlotToScreenHandler(inventory, slotB, handler);
+					if (screenSlotA == -1 || screenSlotB == -1) continue;
+
+					// 执行三次点击完成交换
+                    if (client.interactionManager != null) {
+                        client.interactionManager.clickSlot(
+                                handler.syncId, screenSlotA, 0,
+                                SlotActionType.PICKUP, client.player
+                        );
+						client.interactionManager.clickSlot(
+								handler.syncId, screenSlotB, 0,
+								SlotActionType.PICKUP, client.player
+						);
+						client.interactionManager.clickSlot(
+								handler.syncId, screenSlotA, 0,
+								SlotActionType.PICKUP, client.player
+						);
+                    }
+
+					success = true;
+				} catch (NumberFormatException ignored) {}
+			}
+
+			if (success) {
+				System.out.println("[friendship]Swap complete.");
+			}
+		});
+	}
+
 }
