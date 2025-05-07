@@ -1,19 +1,30 @@
 package icu.iamin.friendship;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ChatScreen;
+import net.minecraft.client.gui.screen.DeathScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.entity.player.HungerManager;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.FoodComponent;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
+import net.minecraft.util.Hand;
 
 
 public class FriendshipClient implements ClientModInitializer {
+
+	private boolean isAutoResurrectEnabled = false;
+	private boolean isAutoEatEnabled = false;
 
 	private static final String CMD_OPEN_INVENTORY = "!openinventory";
 	private static final String CMD_HELLO = "!hello";
@@ -24,7 +35,9 @@ public class FriendshipClient implements ClientModInitializer {
 	private static final String CMD_DROPALL = "!dropall";
 	private static final String CMD_SWAP = "!swap";
 
-
+	private static final String OPTION_AUTORESURRECT = "!autoresurrect";
+	private static final String OPTION_AUTOEAT = "!autoeat";
+	
 	@Override
 	public void onInitializeClient() {
 
@@ -51,12 +64,24 @@ public class FriendshipClient implements ClientModInitializer {
 				handleDropCommand(client, messageContent);
 			} else if (messageContent.contains(CMD_SWAP)) {
 				handleSwapCommand(client, messageContent);
+			} else if (messageContent.contains(OPTION_AUTORESURRECT)) {
+				handleAutoResurrectOption(client);
+			} else if (messageContent.contains(OPTION_AUTOEAT)) {
+				handleAutoEatOption(client);
 			}
 
 
 		});
 
+
+		// 自动逻辑
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			handleAutoResurrect(client);
+			handleAutoEat(client);
+		});
+
 	}
+
 
 	// 打开背包
 	private void handleOpenInventoryCommand(MinecraftClient client) {
@@ -68,7 +93,7 @@ public class FriendshipClient implements ClientModInitializer {
 					client.setScreen(null);
 				}
 				client.setScreen(new InventoryScreen(client.player)); // 打开背包界面
-				System.out.println("[friendship]function success: !openinventory");
+				System.out.println("[friendship]Function success: !openinventory");
 			} else {
 				System.out.println("[friendship]Error: Player is null when trying to open inventory in execute block.");
 			}
@@ -81,7 +106,7 @@ public class FriendshipClient implements ClientModInitializer {
 		client.execute(() -> {
 			if (client.player != null) {
 				client.player.networkHandler.sendChatMessage("[friendship]Hello from friendship!");
-				System.out.println("[friendship]function success: !hello");
+				System.out.println("[friendship]Function success: !hello");
 			} else {
 				System.out.println("[friendship]Error: Player is null when trying to send message in execute block.");
 			}
@@ -123,7 +148,7 @@ public class FriendshipClient implements ClientModInitializer {
 				}
 
 				client.player.networkHandler.sendChatCommand(command);
-				System.out.println("[friendship]function success: !cmd");
+				System.out.println("[friendship]Function success: !cmd");
 			} else {
 				System.out.println("[friendship]Error: Player is null when trying to use cmd command.");
 			}
@@ -162,7 +187,7 @@ public class FriendshipClient implements ClientModInitializer {
 				}
 				client.player.networkHandler.sendChatMessage("------------------------");
 
-				System.out.println("[friendship]function success: !list");
+				System.out.println("[friendship]Function success: !list");
 			} else {
 				System.out.println("[friendship]Error: Player is null when trying to use list command.");
 			}
@@ -242,7 +267,7 @@ public class FriendshipClient implements ClientModInitializer {
 				}
 
 				if (success) {
-					System.out.println("[friendship]function success: !drop");
+					System.out.println("[friendship]Function success: !drop");
 				}
 			} else {
 				System.out.println("[friendship]Error: Player is null.");
@@ -359,4 +384,143 @@ public class FriendshipClient implements ClientModInitializer {
 		});
 	}
 
+	// 自动复活开关
+	private void handleAutoResurrectOption(MinecraftClient client) {
+		System.out.println("Executing command '" + OPTION_AUTORESURRECT + "'.");
+		client.execute(() -> {
+			if (client.player != null) {
+				isAutoResurrectEnabled = !isAutoResurrectEnabled;
+				client.player.networkHandler.sendChatMessage("[friendship]Auto resurrect: " + isAutoResurrectEnabled);
+				System.out.println("[friendship]Function success: !autoresurrect");
+			} else {
+				System.out.println("[friendship]Error: Player is null when trying to use command.");
+			}
+		});
+	}
+
+	// 自动复活
+	private void handleAutoResurrect(MinecraftClient client) {
+		if (isAutoResurrectEnabled && client != null && client.player != null && client.currentScreen instanceof DeathScreen) {
+			client.player.networkHandler.sendChatMessage("[friendship]Auto resurrect triggered.");
+			client.player.requestRespawn();
+		}
+	}
+
+	// 自动进食开关
+	private void handleAutoEatOption(MinecraftClient client) {
+		System.out.println("Executing command '" + OPTION_AUTOEAT + "'.");
+		client.execute(() -> {
+			if (client.player != null) {
+				isAutoEatEnabled = !isAutoEatEnabled;
+				client.player.networkHandler.sendChatMessage("[friendship]Auto eat: " + isAutoEatEnabled);
+				System.out.println("[friendship]function success: !autoeat");
+			} else {
+				System.out.println("[friendship]Error: Player is null when trying to use command.");
+			}
+		});
+	}
+
+	// 自动进食
+	private void handleAutoEat(MinecraftClient client) {
+		// 确保 Mod 功能开启，并且客户端和玩家对象存在
+		if (!isAutoEatEnabled || client.player == null || client.interactionManager == null) return;
+
+		// 仅在生存/冒险模式且可操作时运行
+		if (client.player.getAbilities().creativeMode ||
+				client.player.isUsingItem() ||
+				client.player.isHolding(Items.BOW)) {
+			return;
+		}
+
+		// 获取饥饿管理组件
+		HungerManager hunger = client.player.getHungerManager();
+
+		if (hunger.getFoodLevel() >= 20) {
+			return;
+		}
+
+		// 触发进食条件：饥饿值低于15 或 同时需要生命恢复
+		if (hunger.getFoodLevel() >= 15 &&
+				client.player.getHealth() >= client.player.getMaxHealth()) {
+			return;
+		}
+
+		// 寻找最佳食物
+		FoodSlot bestFood = findBestFood(client.player);
+		if (bestFood == null) return;
+
+		// 切换到食物槽位
+		if (client.player.getInventory().selectedSlot != bestFood.slot) {
+			client.player.getInventory().selectedSlot = bestFood.slot;
+			client.player.networkHandler.sendPacket(
+					new UpdateSelectedSlotC2SPacket(bestFood.slot)
+			);
+		}
+
+		// 执行进食动作（右键长按）
+		if (!client.player.isUsingItem()) {
+			client.interactionManager.interactItem(client.player,
+					Hand.MAIN_HAND);
+		}
+
+	}
+
+	// 食物槽位信息容器
+	private record FoodSlot(int slot, ItemStack stack, float priority) {}
+
+	// 查找最佳食物算法
+	private FoodSlot findBestFood(PlayerEntity player) {
+		PlayerInventory inv = player.getInventory();
+		FoodSlot best = null;
+
+		// 优先检测已手持的食物
+		ItemStack mainHand = inv.getMainHandStack();
+		if (isEdible(mainHand)) {
+			best = new FoodSlot(inv.selectedSlot, mainHand,
+					calculateFoodPriority(mainHand));
+		}
+
+		// 遍历物品栏
+		for (int slot = 0; slot < 8; slot++) {
+			if (slot == inv.selectedSlot) continue; // 跳过已检查的手持物品
+
+			ItemStack stack = inv.getStack(slot);
+			if (!isEdible(stack)) continue;
+
+			float priority = calculateFoodPriority(stack);
+			if (best == null || priority > best.priority()) {
+				best = new FoodSlot(slot, stack, priority);
+			}
+		}
+		return best;
+	}
+
+	// 食物有效性检查
+	private boolean isEdible(ItemStack stack) {
+		return stack.getItem().isFood() &&
+				!stack.getItem().hasRecipeRemainder();
+	}
+
+	// 食物优先级计算（考虑当前需求）
+	private float calculateFoodPriority(ItemStack stack) {
+		PlayerEntity player = MinecraftClient.getInstance().player;
+
+		
+		HungerManager hunger = player.getHungerManager();
+
+		FoodComponent food = stack.getItem().getFoodComponent();
+		float baseScore = food.getHunger() * (1 + food.getSaturationModifier());
+
+		// 生命恢复需求权重
+		if (player.getHealth() < player.getMaxHealth()) {
+			baseScore *= (food.getHunger() >= 4) ? 1.5f : 0.8f;
+		}
+
+		// 低饥饿时优先快速恢复
+		if (hunger.getFoodLevel() < 10) {
+			baseScore *= (food.getSaturationModifier() > 0.6f) ? 1.2f : 0.9f;
+		}
+
+		return baseScore;
+	}
 }
