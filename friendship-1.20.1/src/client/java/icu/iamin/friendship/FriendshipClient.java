@@ -7,6 +7,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.DeathScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.entity.effect.StatusEffect;
+import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.HungerManager;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -14,11 +16,15 @@ import net.minecraft.item.FoodComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
+import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
+import net.minecraft.util.math.Vec3d;
+
+import java.util.Objects;
 
 
 public class FriendshipClient implements ClientModInitializer {
@@ -34,6 +40,8 @@ public class FriendshipClient implements ClientModInitializer {
 	private static final String CMD_DROP = "!drop";
 	private static final String CMD_DROPALL = "!dropall";
 	private static final String CMD_SWAP = "!swap";
+	private static final String CMD_QUIT = "!quit";
+	private static final String CMD_STATUS = "!status";
 
 	private static final String OPTION_AUTORESURRECT = "!autoresurrect";
 	private static final String OPTION_AUTOEAT = "!autoeat";
@@ -68,8 +76,11 @@ public class FriendshipClient implements ClientModInitializer {
 				handleAutoResurrectOption(client);
 			} else if (messageContent.contains(OPTION_AUTOEAT)) {
 				handleAutoEatOption(client);
+			} else if (messageContent.contains(CMD_QUIT)) {
+				handleQuitCommand(client);
+			} else if (messageContent.contains(CMD_STATUS)) {
+				handleStatusCommand(client);
 			}
-
 
 		});
 
@@ -522,5 +533,57 @@ public class FriendshipClient implements ClientModInitializer {
 		}
 
 		return baseScore;
+	}
+
+	// 退出游戏
+	private void handleQuitCommand(MinecraftClient client) {
+        if (client.player != null) {
+            client.player.networkHandler.sendChatMessage("[friendship]Goodbye.");
+			MinecraftClient.getInstance().scheduleStop();
+		} else {
+			System.out.println("[friendship]Error: Player is null when trying to use command.");
+		}
+
+	}
+
+	// 查询状态
+	private void handleStatusCommand(MinecraftClient client) {
+		if (client.player != null) {
+			float playerHealth = client.player.getHealth();
+			float playerMaxHealth = client.player.getMaxHealth();
+			HungerManager playerHunger = client.player.getHungerManager();
+			float playerFoodLevel = playerHunger.getFoodLevel();
+			float playerMaxFoodLevel = playerHunger.getPrevFoodLevel();
+
+			Vec3d position = client.player.getPos();
+
+			client.player.networkHandler.sendChatMessage("[friendship]-------- Status --------");
+			client.player.networkHandler.sendChatMessage("[friendship]Health: " + String.format("%.1f", playerHealth) + "/" + String.format("%.1f", playerMaxHealth));
+			client.player.networkHandler.sendChatMessage("[friendship]Food: " + String.format("%.1f", playerFoodLevel) + "/" + String.format("%.1f", playerMaxFoodLevel));
+			client.player.networkHandler.sendChatMessage("[friendship]Location: " + position);
+			client.player.networkHandler.sendChatMessage("[friendship]Effects: ");
+
+			if (client.player.getActiveStatusEffects().isEmpty()) {
+				client.player.networkHandler.sendChatMessage("[friendship] - None");
+			} else {
+				for (StatusEffectInstance effectInstance : client.player.getActiveStatusEffects().values()) {
+					StatusEffect effect = effectInstance.getEffectType();
+					String effectName = Objects.requireNonNull(Registries.STATUS_EFFECT.getId(effect)).toString();
+					int amplifier = effectInstance.getAmplifier();
+					int duration = effectInstance.getDuration();
+
+					client.player.networkHandler.sendChatMessage("[friendship] - Name: " + effectName +
+							", Level: " + (amplifier + 1) +
+							", Duration: " + duration / 20 + "s");
+				}
+			}
+
+			client.player.networkHandler.sendChatMessage("[friendship]------------------------");
+
+
+		} else {
+			System.out.println("[friendship]Error: Player is null when trying to use command.");
+		}
+
 	}
 }
