@@ -1,12 +1,13 @@
 package icu.iamin.friendship;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.DeathScreen;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.HungerManager;
@@ -24,15 +25,26 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.Vec3d;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 
 public class FriendshipClient implements ClientModInitializer {
 
 	private boolean isAutoResurrectEnabled = false;
 	private boolean isAutoEatEnabled = false;
+	private static String LLM_API_URL = "";
+	private static String LLM_API_KEY = "";
+	private static String LLM_MODEL = "";
+	private static String LLM_PROMPT = "你是在MC中和我对话的一个玩家。";
 
-	private static final String CMD_OPEN_INVENTORY = "!openinventory";
 	private static final String CMD_HELLO = "!hello";
 	private static final String CMD_BARITONE = "!baritone #";
 	private static final String CMD_CMD = "!cmd /";
@@ -42,9 +54,14 @@ public class FriendshipClient implements ClientModInitializer {
 	private static final String CMD_SWAP = "!swap";
 	private static final String CMD_QUIT = "!quit";
 	private static final String CMD_STATUS = "!status";
+	private static final String CMD_LLM = "!llm ";
 
 	private static final String OPTION_AUTORESURRECT = "!autoresurrect";
 	private static final String OPTION_AUTOEAT = "!autoeat";
+	private static final String OPTION_SETLLMURL = "!setllm url ";
+	private static final String OPTION_SETLLMKEY = "!setllm key ";
+	private static final String OPTION_SETLLMPROMPT = "!setllm prompt ";
+	private static final String OPTION_SETLLMMODEL = "!setllm model ";
 	
 	@Override
 	public void onInitializeClient() {
@@ -56,9 +73,7 @@ public class FriendshipClient implements ClientModInitializer {
 			MinecraftClient client = MinecraftClient.getInstance();
 			System.out.println("[friendship]get chat message: " + messageContent);
 
-			if (messageContent.contains(CMD_OPEN_INVENTORY)) {
-				handleOpenInventoryCommand(client);
-			} else if (messageContent.contains(CMD_HELLO)) {
+			if (messageContent.contains(CMD_HELLO)) {
 				handleSayHelloCommand(client);
 			} else if (messageContent.contains(CMD_BARITONE)) {
 				handleBaritoneCommand(client, messageContent);
@@ -80,6 +95,16 @@ public class FriendshipClient implements ClientModInitializer {
 				handleQuitCommand(client);
 			} else if (messageContent.contains(CMD_STATUS)) {
 				handleStatusCommand(client);
+			} else if (messageContent.contains(OPTION_SETLLMURL)) {
+				handleUrlOption(client, messageContent);
+			} else if (messageContent.contains(OPTION_SETLLMKEY)) {
+				handleKeyOption(client, messageContent);
+			} else if (messageContent.contains(OPTION_SETLLMPROMPT)) {
+				handlePromptOption(client, messageContent);
+			} else if (messageContent.contains(OPTION_SETLLMMODEL)) {
+				handleModelOption(client, messageContent);
+			} else if (messageContent.contains(CMD_LLM)) {
+				handleLlmCommand(client, messageContent);
 			}
 
 		});
@@ -91,24 +116,6 @@ public class FriendshipClient implements ClientModInitializer {
 			handleAutoEat(client);
 		});
 
-	}
-
-
-	// 打开背包
-	private void handleOpenInventoryCommand(MinecraftClient client) {
-		System.out.println("Executing command '" + CMD_OPEN_INVENTORY + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				// 如果当前在聊天界面，先关闭聊天界面再打开背包
-				if (client.currentScreen instanceof ChatScreen) {
-					client.setScreen(null);
-				}
-				client.setScreen(new InventoryScreen(client.player)); // 打开背包界面
-				System.out.println("[friendship]Function success: !openinventory");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to open inventory in execute block.");
-			}
-		});
 	}
 
 	// hello
@@ -129,8 +136,6 @@ public class FriendshipClient implements ClientModInitializer {
 		System.out.println("Executing command '" + CMD_BARITONE + "'.");
 		client.execute(() -> {
 			if (client.player != null) {
-
-				// 查找 '#' 字符在字符串中第一次出现的位置
 				int hashIndex = inputString.indexOf("#");
 				var baritoneCommand = "";
 				if (hashIndex != -1) {
@@ -150,8 +155,6 @@ public class FriendshipClient implements ClientModInitializer {
 		System.out.println("Executing command '" + CMD_CMD + "'.");
 		client.execute(() -> {
 			if (client.player != null) {
-
-				// 查找 '/' 字符在字符串中第一次出现的位置
 				int hashIndex = inputString.indexOf("/");
 				var command = "";
 				if (hashIndex != -1) {
@@ -172,27 +175,17 @@ public class FriendshipClient implements ClientModInitializer {
 		client.execute(() -> {
 			if (client.player != null) {
 				client.player.networkHandler.sendChatMessage("--- Inventory Contents ---");
-				// 获取玩家背包实例
 				PlayerInventory inventory = client.player.getInventory();
-				// 获取玩家背包的总槽位数
 				int totalSlots = inventory.size();
 
-				// 遍历背包的所有槽位 (从索引 0 到 totalSlots - 1)
 				for (int i = 0; i < totalSlots; i++) {
-					// 获取当前槽位的物品堆栈
 					ItemStack stack = inventory.getStack(i);
-
-					// 检查物品堆栈是否不为空 (即这个槽位有物品)
 					if (!stack.isEmpty()) {
-						// 获取物品名称 (作为 Text 对象，然后转为 String)
 						String itemName = stack.getItem().getName().getString();
-						// 获取物品堆栈的数量
 						int itemCount = stack.getCount();
 
-						// 格式化输出信息，包含槽位索引、数量和物品名称
 						String slotInfo = "Slot " + i + ": " + itemCount + " x " + itemName;
 
-						// 发送这条信息到聊天框
 						client.player.networkHandler.sendChatMessage(slotInfo);
 					}
 				}
@@ -470,8 +463,7 @@ public class FriendshipClient implements ClientModInitializer {
 
 		// 执行进食动作（右键长按）
 		if (!client.player.isUsingItem()) {
-			client.interactionManager.interactItem(client.player,
-					Hand.MAIN_HAND);
+			client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
 		}
 
 	}
@@ -516,7 +508,7 @@ public class FriendshipClient implements ClientModInitializer {
 	private float calculateFoodPriority(ItemStack stack) {
 		PlayerEntity player = MinecraftClient.getInstance().player;
 
-		
+
 		HungerManager hunger = player.getHungerManager();
 
 		FoodComponent food = stack.getItem().getFoodComponent();
@@ -584,6 +576,102 @@ public class FriendshipClient implements ClientModInitializer {
 		} else {
 			System.out.println("[friendship]Error: Player is null when trying to use command.");
 		}
+	}
 
+	// 处理llm指令
+	private void handleLlmCommand(MinecraftClient client, String inputString) {
+		String question = inputString.substring(inputString.indexOf(CMD_LLM) + CMD_LLM.length());
+
+		CompletableFuture.runAsync(() -> {
+			client.player.networkHandler.sendChatMessage(callLLMAPI(question));
+		});
+	}
+
+	// 发送llm
+	public String callLLMAPI(String userInput) {
+		try {
+			URL url = new URL(LLM_API_URL);
+			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+			connection.setRequestMethod("POST");
+			connection.setRequestProperty("Content-Type", "application/json");
+			connection.setRequestProperty("Authorization", "Bearer " + LLM_API_KEY);
+			connection.setDoOutput(true);
+
+			String jsonInput = "{"
+					+ "\"model\": \"" + LLM_MODEL +"\","
+					+ "\"messages\": ["
+					+ "  {"
+					+ "    \"role\": \"system\","
+					+ "    \"content\": \"" + escapeJson(LLM_PROMPT) + "\""
+					+ "  },"
+					+ "  {"
+					+ "    \"role\": \"user\","
+					+ "    \"content\": \"" + escapeJson(userInput) + "\""
+					+ "  }"
+					+ "]"
+					+ "}";
+
+			try (OutputStream os = connection.getOutputStream()) {
+				byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);
+				os.write(input, 0, input.length);
+			}
+
+			int responseCode = connection.getResponseCode();
+			if (responseCode == 200) {
+				try (BufferedReader br = new BufferedReader(
+						new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+					StringBuilder response = new StringBuilder();
+					String line;
+					while ((line = br.readLine()) != null) {
+						response.append(line);
+					}
+					return parseResponse(response.toString());
+				}
+			} else {
+				return "API 错误，状态码：" + responseCode;
+			}
+		} catch (IOException e) {
+			return "请求失败：" + e.getMessage();
+		}
+	}
+
+	// 转义特殊字符
+	private String escapeJson(String input) {
+		return input.replace("\\", "\\\\")
+				.replace("\"", "\\\"")
+				.replace("\n", "\\n");
+	}
+
+	// 解析响应
+	private String parseResponse(String jsonResponse) {
+		try {
+			JsonObject root = JsonParser.parseString(jsonResponse).getAsJsonObject();
+			JsonArray choices = root.getAsJsonArray("choices");
+			if (choices.size() == 0) return "未收到有效响应";
+
+			JsonObject message = choices.get(0).getAsJsonObject()
+					.getAsJsonObject("message");
+			return message.get("content").getAsString();
+		} catch (Exception e) {
+			return "解析响应失败";
+		}
+	}
+
+	// 处理llm设置
+	private void handleUrlOption(MinecraftClient client, String inputString) {
+		LLM_API_URL = inputString.substring(inputString.indexOf(OPTION_SETLLMURL) + OPTION_SETLLMURL.length());
+		client.player.networkHandler.sendChatMessage("[friendship]Set llm url.");
+	}
+	private void handleKeyOption(MinecraftClient client, String inputString) {
+		LLM_API_KEY = inputString.substring(inputString.indexOf(OPTION_SETLLMKEY) + OPTION_SETLLMKEY.length());
+		client.player.networkHandler.sendChatMessage("[friendship]Set llm key.");
+	}
+	private void handlePromptOption(MinecraftClient client, String inputString) {
+		LLM_PROMPT = inputString.substring(inputString.indexOf(OPTION_SETLLMPROMPT) + OPTION_SETLLMPROMPT.length());
+		client.player.networkHandler.sendChatMessage("[friendship]Set llm prompt.");
+	}
+	private void handleModelOption(MinecraftClient client, String inputString) {
+		LLM_MODEL = inputString.substring(inputString.indexOf(OPTION_SETLLMMODEL) + OPTION_SETLLMMODEL.length());
+		client.player.networkHandler.sendChatMessage("[friendship]Set llm model.");
 	}
 }
