@@ -129,6 +129,6 @@ public class LlmCommandHandler implements FriendshipCommand {
 
     @Override
     public String getHelp() {
-        return "使用llm。";
+        return "使用api连接到llm进行对话。用法1：!llm set <url|key|model|prompt> <值> 来设定api相关参数（更改prompt可能导致无法执行游戏内操作）。用法2：!llm <对话内容> 使用此命令来和配置好了的llm交互";
     }
 }

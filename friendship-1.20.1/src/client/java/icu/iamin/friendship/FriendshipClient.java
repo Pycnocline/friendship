@@ -13,7 +13,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 
-
 public class FriendshipClient implements ClientModInitializer {
 
 	public static final Logger LOGGER = LoggerFactory.getLogger("FriendshipClient");
@@ -93,8 +92,7 @@ public class FriendshipClient implements ClientModInitializer {
 				return "获取指令列表.";
 			}
 		});
-
-
+		
 		// 自动逻辑
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			client.execute(() -> {
