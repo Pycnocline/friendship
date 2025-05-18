@@ -1,677 +1,130 @@
 package icu.iamin.friendship;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import icu.iamin.friendship.command.CommandManager;
+import icu.iamin.friendship.command.FriendshipCommand;
+import icu.iamin.friendship.command.commands.*;
+import icu.iamin.friendship.features.*;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.DeathScreen;
-import net.minecraft.entity.effect.StatusEffect;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.player.HungerManager;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.FoodComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
+import java.util.Collection;
 
 
 public class FriendshipClient implements ClientModInitializer {
 
-	private boolean isAutoResurrectEnabled = false;
-	private boolean isAutoEatEnabled = false;
-	private static String LLM_API_URL = "";
-	private static String LLM_API_KEY = "";
-	private static String LLM_MODEL = "";
-	private static String LLM_PROMPT = "你是在MC中和我对话的一个玩家。";
+	public static final Logger LOGGER = LoggerFactory.getLogger("FriendshipClient");
+	private CommandManager commandManager;
+	private Hello hello;
+	private Echo echo;
+	private Status status;
+	private Inv inv;
+	private Action action;
+	private Llm llm;
 
-	private static final String CMD_HELLO = "!hello";
-	private static final String CMD_BARITONE = "!baritone #";
-	private static final String CMD_CMD = "!cmd /";
-	private static final String CMD_LIST = "!list";
-	private static final String CMD_DROP = "!drop";
-	private static final String CMD_DROPALL = "!dropall";
-	private static final String CMD_SWAP = "!swap";
-	private static final String CMD_QUIT = "!quit";
-	private static final String CMD_STATUS = "!status";
-	private static final String CMD_LLM = "!llm ";
-
-	private static final String OPTION_AUTORESURRECT = "!autoresurrect";
-	private static final String OPTION_AUTOEAT = "!autoeat";
-	private static final String OPTION_SETLLMURL = "!setllm url ";
-	private static final String OPTION_SETLLMKEY = "!setllm key ";
-	private static final String OPTION_SETLLMPROMPT = "!setllm prompt ";
-	private static final String OPTION_SETLLMMODEL = "!setllm model ";
-	
 	@Override
 	public void onInitializeClient() {
+		LOGGER.info("Initializing Friendship!");
 
-		System.out.println("[friendship]Friendship loaded");
+		this.hello = new Hello();
+		this.echo = new Echo();
+		this.status = new Status();
+		this.inv = new Inv();
+		this.action = new Action();
+		this.llm = new Llm();
+
+		this.commandManager = new CommandManager();
+
+		registerCommandHandlers();
 
 		ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
-			String messageContent = message.getString().trim();
+			String rawMessage = message.getString().trim();
 			MinecraftClient client = MinecraftClient.getInstance();
-			System.out.println("[friendship]get chat message: " + messageContent);
+			LOGGER.info("Get chat message: " + rawMessage);
 
-			if (messageContent.contains(CMD_HELLO)) {
-				handleSayHelloCommand(client);
-			} else if (messageContent.contains(CMD_BARITONE)) {
-				handleBaritoneCommand(client, messageContent);
-			} else if (messageContent.contains(CMD_CMD)) {
-				handleUseCommand(client, messageContent);
-			} else if (messageContent.contains(CMD_LIST)) {
-				handleListCommand(client);
-			} else if (messageContent.contains(CMD_DROPALL)) {
-				handleDropAllCommand(client);
-			} else if (messageContent.contains(CMD_DROP)) {
-				handleDropCommand(client, messageContent);
-			} else if (messageContent.contains(CMD_SWAP)) {
-				handleSwapCommand(client, messageContent);
-			} else if (messageContent.contains(OPTION_AUTORESURRECT)) {
-				handleAutoResurrectOption(client);
-			} else if (messageContent.contains(OPTION_AUTOEAT)) {
-				handleAutoEatOption(client);
-			} else if (messageContent.contains(CMD_QUIT)) {
-				handleQuitCommand(client);
-			} else if (messageContent.contains(CMD_STATUS)) {
-				handleStatusCommand(client);
-			} else if (messageContent.contains(OPTION_SETLLMURL)) {
-				handleUrlOption(client, messageContent);
-			} else if (messageContent.contains(OPTION_SETLLMKEY)) {
-				handleKeyOption(client, messageContent);
-			} else if (messageContent.contains(OPTION_SETLLMPROMPT)) {
-				handlePromptOption(client, messageContent);
-			} else if (messageContent.contains(OPTION_SETLLMMODEL)) {
-				handleModelOption(client, messageContent);
-			} else if (messageContent.contains(CMD_LLM)) {
-				handleLlmCommand(client, messageContent);
+			boolean commandHandled = false;
+
+			String[] parts = rawMessage.trim().split("\\s+");
+			if (parts.length > 1) {
+				if (commandManager.knowsCommand(parts[1].toLowerCase())) {
+					commandHandled = commandManager.handleCommand(client, rawMessage);
+				} else if (rawMessage.contains(":")) {
+					rawMessage = parts[0] + " " + rawMessage.substring(rawMessage.indexOf(":") + 1);
+					parts = rawMessage.trim().split("\\s+");
+					if (parts.length > 1) {
+						if (commandManager.knowsCommand(parts[1].toLowerCase())) {
+							commandHandled = commandManager.handleCommand(client, rawMessage);
+						}
+					}
+				}
 			}
 
+			int index = rawMessage.indexOf("悄");
+			if (parts.length > 0 && rawMessage.contains("：") && index != -1) {
+				rawMessage = rawMessage.substring(0, index) + " " + rawMessage.substring(rawMessage.indexOf("：") + 1);
+				parts = rawMessage.trim().split("\\s+");
+				if (parts.length > 1) {
+					if (commandManager.knowsCommand(parts[1].toLowerCase())) {
+						commandHandled = commandManager.handleCommand(client, rawMessage);
+					}
+				}
+			}
+
+			LOGGER.info("Message handled: " + commandHandled);
+		});
+
+		// 注册!help
+		commandManager.register(new FriendshipCommand() {
+			@Override
+			public String getName() {
+				return "!help";
+			}
+
+			@Override
+			public void execute(MinecraftClient client, String[] args) {
+				commandManager.sendHelp(client);
+			}
+
+			@Override
+			public String getHelp() {
+				return "获取指令列表.";
+			}
 		});
 
 
 		// 自动逻辑
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			handleAutoResurrect(client);
-			handleAutoEat(client);
-		});
+			client.execute(() -> {
+				Collection<FriendshipCommand> featuresToTick = commandManager.getToggleableFeatures();
 
-	}
-
-	// hello
-	private void handleSayHelloCommand(MinecraftClient client) {
-		System.out.println("Executing command '" + CMD_HELLO + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				client.player.networkHandler.sendChatMessage("[friendship]Hello from friendship!");
-				System.out.println("[friendship]Function success: !hello");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to send message in execute block.");
-			}
-		});
-	}
-
-	// baritone命令
-	private void handleBaritoneCommand(MinecraftClient client, String inputString) {
-		System.out.println("Executing command '" + CMD_BARITONE + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				int hashIndex = inputString.indexOf("#");
-				var baritoneCommand = "";
-				if (hashIndex != -1) {
-					baritoneCommand = inputString.substring(hashIndex);
-				}
-
-				client.player.networkHandler.sendChatMessage(baritoneCommand);
-				System.out.println("[friendship]function success: !baritone");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to use baritone command.");
-			}
-		});
-	}
-
-	// 使用指令
-	private void handleUseCommand(MinecraftClient client, String inputString) {
-		System.out.println("Executing command '" + CMD_CMD + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				int hashIndex = inputString.indexOf("/");
-				var command = "";
-				if (hashIndex != -1) {
-					command = inputString.substring(hashIndex + 1);
-				}
-
-				client.player.networkHandler.sendChatCommand(command);
-				System.out.println("[friendship]Function success: !cmd");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to use cmd command.");
-			}
-		});
-	}
-
-	// 列出物品栏中的所有物品
-	private void handleListCommand(MinecraftClient client) {
-		System.out.println("Executing command '" + CMD_LIST + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				client.player.networkHandler.sendChatMessage("--- Inventory Contents ---");
-				PlayerInventory inventory = client.player.getInventory();
-				int totalSlots = inventory.size();
-
-				for (int i = 0; i < totalSlots; i++) {
-					ItemStack stack = inventory.getStack(i);
-					if (!stack.isEmpty()) {
-						String itemName = stack.getItem().getName().getString();
-						int itemCount = stack.getCount();
-
-						String slotInfo = "Slot " + i + ": " + itemCount + " x " + itemName;
-
-						client.player.networkHandler.sendChatMessage(slotInfo);
+				for (FriendshipCommand feature : featuresToTick) {
+					if (feature.isEnabled()) {
+						feature.onClientTick(client);
 					}
 				}
-				client.player.networkHandler.sendChatMessage("------------------------");
-
-				System.out.println("[friendship]Function success: !list");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to use list command.");
-			}
+			});
 		});
-	}
-
-	// 丢下物品
-	private void handleDropCommand(MinecraftClient client, String inputString) {
-		System.out.println("Executing command '" + CMD_DROP + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				// 去前缀，分割
-				String argsString;
-				int cmdIndex = inputString.indexOf(CMD_DROP);
-				if (cmdIndex == -1) {
-					client.player.sendMessage(Text.literal("[friendship]Error: Command not found."), false);
-					return;
-				}
-				argsString = inputString.substring(cmdIndex + CMD_DROP.length()).trim();
-				String[] parts = argsString.split(" ");
-
-				// 检查参数数量是否为偶数且大于0
-				if (parts.length == 0 || parts.length % 2 != 0) {
-					client.player.networkHandler.sendChatMessage("[friendship]Error: Syntax error.");
-					return;
-				}
-
-				// 获取当前屏幕处理器和玩家物品栏
-				ScreenHandler currentScreenHandler = client.player.currentScreenHandler;
-				int syncId = currentScreenHandler.syncId;
-				PlayerInventory inventory = client.player.getInventory();
-
-				boolean success = false;
-				for (int i = 0; i < parts.length; i += 2) {
-					int inventorySlot;
-					int amount;
-
-					inventorySlot = Integer.parseInt(parts[i]);
-					amount = Integer.parseInt(parts[i + 1]);
-
-					// 检查槽位有效性 (0-40 包括副手)
-					if (inventorySlot < 0 || inventorySlot > 40) {
-						continue;
-					}
-
-					if (amount <= 0) {
-						continue;
-					}
-
-					ItemStack stack = inventory.getStack(inventorySlot);
-					if (stack.isEmpty()) {
-						continue;
-					}
-
-					// 转换物品栏槽位到当前屏幕处理器的槽位编号
-					int screenHandlerSlot = convertInventorySlotToScreenHandler(inventory, inventorySlot, currentScreenHandler);
-					if (screenHandlerSlot == -1) {
-						continue;
-					}
-
-					int amountToDrop = Math.min(amount, stack.getCount());
-					if (amountToDrop <= 0) continue;
-
-					// 执行丢弃操作
-					for (int j = 0; j < amountToDrop; j++) {
-                        if (client.interactionManager != null) {
-                            client.interactionManager.clickSlot(
-                                    syncId,
-                                    screenHandlerSlot,
-                                    0,
-                                    SlotActionType.THROW,
-                                    client.player
-                            );
-                        }
-                    }
-					success = true;
-				}
-
-				if (success) {
-					System.out.println("[friendship]Function success: !drop");
-				}
-			} else {
-				System.out.println("[friendship]Error: Player is null.");
-			}
-		});
-	}
-
-	// 转换物品栏槽位到屏幕处理器中的实际槽位编号
-	private int convertInventorySlotToScreenHandler(PlayerInventory inventory, int slot, ScreenHandler handler) {
-		for (Slot handlerSlot : handler.slots) {
-			if (handlerSlot.inventory == inventory && handlerSlot.getIndex() == slot) {
-				return handlerSlot.id;
-			}
-		}
-		return -1;
-	}
-
-	// 丢下所有物品
-	private void handleDropAllCommand(MinecraftClient client) {
-		System.out.println("Executing command '" + CMD_DROPALL + "'.");
-        if (client.player != null) {
-			PlayerInventory inventory = client.player.getInventory();
-
-			ScreenHandler handler = client.player.currentScreenHandler;
-			int syncId = handler.syncId;
-
-			boolean success = false;
-			// 遍历所有玩家槽位（0-40）
-			for (int slot = 0; slot <= 40; slot++) {
-				ItemStack stack = inventory.getStack(slot);
-				if (stack.isEmpty()) continue;
-
-				// 转换为当前屏幕处理器的槽位编号
-				int screenSlot = convertInventorySlotToScreenHandler(inventory, slot, handler);
-				if (screenSlot == -1) continue;
-
-				// 执行丢弃操作
-                if (client.interactionManager != null) {
-                    client.interactionManager.clickSlot(
-                            syncId,
-                            screenSlot,
-                            1,
-                            SlotActionType.THROW,
-                            client.player
-                    );
-                }
-                success = true;
-			}
-			if (success) {
-				System.out.println("[friendship]Dropped all items.");
-			}
-		}
-	}
-
-	// 交换物品位置
-	private void handleSwapCommand(MinecraftClient client, String inputString) {
-		client.execute(() -> {
-			if (client.player == null) return;
-
-			// 提取命令参数
-			int cmdIndex = inputString.indexOf(CMD_SWAP);
-			if (cmdIndex == -1) return;
-
-			String argsString = inputString.substring(cmdIndex + CMD_SWAP.length()).trim();
-			String[] parts = argsString.split("\\s+");
-
-			// 参数合法性检查
-			if (parts.length % 2 != 0) {
-				client.player.sendMessage(Text.literal("[friendship]Error: Syntax error."), false);
-				return;
-			}
-
-			ScreenHandler handler = client.player.currentScreenHandler;
-			PlayerInventory inventory = client.player.getInventory();
-			boolean success = false;
-
-			// 遍历所有槽位对
-			for (int i = 0; i < parts.length; i += 2) {
-				try {
-					int slotA = Integer.parseInt(parts[i]);
-					int slotB = Integer.parseInt(parts[i + 1]);
-
-					// 槽位有效性检查（0-40）
-					if (slotA < 0 || slotA > 40 || slotB < 0 || slotB > 40) continue;
-
-					// 转换为屏幕处理器槽位
-					int screenSlotA = convertInventorySlotToScreenHandler(inventory, slotA, handler);
-					int screenSlotB = convertInventorySlotToScreenHandler(inventory, slotB, handler);
-					if (screenSlotA == -1 || screenSlotB == -1) continue;
-
-					// 执行三次点击完成交换
-                    if (client.interactionManager != null) {
-                        client.interactionManager.clickSlot(
-                                handler.syncId, screenSlotA, 0,
-                                SlotActionType.PICKUP, client.player
-                        );
-						client.interactionManager.clickSlot(
-								handler.syncId, screenSlotB, 0,
-								SlotActionType.PICKUP, client.player
-						);
-						client.interactionManager.clickSlot(
-								handler.syncId, screenSlotA, 0,
-								SlotActionType.PICKUP, client.player
-						);
-                    }
-
-					success = true;
-				} catch (NumberFormatException ignored) {}
-			}
-
-			if (success) {
-				System.out.println("[friendship]Swap complete.");
-			}
-		});
-	}
-
-	// 自动复活开关
-	private void handleAutoResurrectOption(MinecraftClient client) {
-		System.out.println("Executing command '" + OPTION_AUTORESURRECT + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				isAutoResurrectEnabled = !isAutoResurrectEnabled;
-				client.player.networkHandler.sendChatMessage("[friendship]Auto resurrect: " + isAutoResurrectEnabled);
-				System.out.println("[friendship]Function success: !autoresurrect");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to use command.");
-			}
-		});
-	}
-
-	// 自动复活
-	private void handleAutoResurrect(MinecraftClient client) {
-		if (isAutoResurrectEnabled && client != null && client.player != null && client.currentScreen instanceof DeathScreen) {
-			client.player.networkHandler.sendChatMessage("[friendship]Auto resurrect triggered.");
-			client.player.requestRespawn();
-		}
-	}
-
-	// 自动进食开关
-	private void handleAutoEatOption(MinecraftClient client) {
-		System.out.println("Executing command '" + OPTION_AUTOEAT + "'.");
-		client.execute(() -> {
-			if (client.player != null) {
-				isAutoEatEnabled = !isAutoEatEnabled;
-				client.player.networkHandler.sendChatMessage("[friendship]Auto eat: " + isAutoEatEnabled);
-				System.out.println("[friendship]function success: !autoeat");
-			} else {
-				System.out.println("[friendship]Error: Player is null when trying to use command.");
-			}
-		});
-	}
-
-	// 自动进食
-	private void handleAutoEat(MinecraftClient client) {
-		// 确保 Mod 功能开启，并且客户端和玩家对象存在
-		if (!isAutoEatEnabled || client.player == null || client.interactionManager == null) return;
-
-		// 仅在生存/冒险模式且可操作时运行
-		if (client.player.getAbilities().creativeMode ||
-				client.player.isUsingItem() ||
-				client.player.isHolding(Items.BOW)) {
-			return;
-		}
-
-		// 获取饥饿管理组件
-		HungerManager hunger = client.player.getHungerManager();
-
-		if (hunger.getFoodLevel() >= 20) {
-			return;
-		}
-
-		// 触发进食条件：饥饿值低于15 或 同时需要生命恢复
-		if (hunger.getFoodLevel() >= 15 &&
-				client.player.getHealth() >= client.player.getMaxHealth()) {
-			return;
-		}
-
-		// 寻找最佳食物
-		FoodSlot bestFood = findBestFood(client.player);
-		if (bestFood == null) return;
-
-		// 切换到食物槽位
-		if (client.player.getInventory().selectedSlot != bestFood.slot) {
-			client.player.getInventory().selectedSlot = bestFood.slot;
-			client.player.networkHandler.sendPacket(
-					new UpdateSelectedSlotC2SPacket(bestFood.slot)
-			);
-		}
-
-		// 执行进食动作（右键长按）
-		if (!client.player.isUsingItem()) {
-			client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
-		}
 
 	}
 
-	// 食物槽位信息容器
-	private record FoodSlot(int slot, ItemStack stack, float priority) {}
+	// 注册命令
+	private void registerCommandHandlers() {
+		commandManager.register(new HelloCommandHandler(this.hello, this.echo));
+		commandManager.register(new BaritoneCommandHandler());
+		commandManager.register(new CmdCommandHandler(this.echo));
+		commandManager.register(new InvCommandHandler(this.inv, this.echo));
+		commandManager.register(new DropCommandHandler(this.inv, this.echo));
+		commandManager.register(new DropallCommandHandler(this.inv, this.echo));
+		commandManager.register(new SwapCommandHandler(this.inv, this.echo));
+		commandManager.register(new StatusCommandHandler(this.status, this.echo));
+		commandManager.register(new QuitCommandHandler(this.status, this.echo));
+		commandManager.register(new AutorespawnCommandHandler(this.status, this.echo));
+		commandManager.register(new AutoeatCommandHandler(this.action, this.echo));
+		commandManager.register(new LlmCommandHandler(this.llm, this.inv, this.echo, this.status));
 
-	// 查找最佳食物算法
-	private FoodSlot findBestFood(PlayerEntity player) {
-		PlayerInventory inv = player.getInventory();
-		FoodSlot best = null;
-
-		// 优先检测已手持的食物
-		ItemStack mainHand = inv.getMainHandStack();
-		if (isEdible(mainHand)) {
-			best = new FoodSlot(inv.selectedSlot, mainHand,
-					calculateFoodPriority(mainHand));
-		}
-
-		// 遍历物品栏
-		for (int slot = 0; slot < 8; slot++) {
-			if (slot == inv.selectedSlot) continue; // 跳过已检查的手持物品
-
-			ItemStack stack = inv.getStack(slot);
-			if (!isEdible(stack)) continue;
-
-			float priority = calculateFoodPriority(stack);
-			if (best == null || priority > best.priority()) {
-				best = new FoodSlot(slot, stack, priority);
-			}
-		}
-		return best;
-	}
-
-	// 食物有效性检查
-	private boolean isEdible(ItemStack stack) {
-		return stack.getItem().isFood() &&
-				!stack.getItem().hasRecipeRemainder();
-	}
-
-	// 食物优先级计算（考虑当前需求）
-	private float calculateFoodPriority(ItemStack stack) {
-		PlayerEntity player = MinecraftClient.getInstance().player;
-
-
-		HungerManager hunger = player.getHungerManager();
-
-		FoodComponent food = stack.getItem().getFoodComponent();
-		float baseScore = food.getHunger() * (1 + food.getSaturationModifier());
-
-		// 生命恢复需求权重
-		if (player.getHealth() < player.getMaxHealth()) {
-			baseScore *= (food.getHunger() >= 4) ? 1.5f : 0.8f;
-		}
-
-		// 低饥饿时优先快速恢复
-		if (hunger.getFoodLevel() < 10) {
-			baseScore *= (food.getSaturationModifier() > 0.6f) ? 1.2f : 0.9f;
-		}
-
-		return baseScore;
-	}
-
-	// 退出游戏
-	private void handleQuitCommand(MinecraftClient client) {
-        if (client.player != null) {
-            client.player.networkHandler.sendChatMessage("[friendship]Goodbye.");
-			MinecraftClient.getInstance().scheduleStop();
-		} else {
-			System.out.println("[friendship]Error: Player is null when trying to use command.");
-		}
-
-	}
-
-	// 查询状态
-	private void handleStatusCommand(MinecraftClient client) {
-		if (client.player != null) {
-			float playerHealth = client.player.getHealth();
-			float playerMaxHealth = client.player.getMaxHealth();
-			HungerManager playerHunger = client.player.getHungerManager();
-			float playerFoodLevel = playerHunger.getFoodLevel();
-			float playerMaxFoodLevel = playerHunger.getPrevFoodLevel();
-
-			Vec3d position = client.player.getPos();
-
-			client.player.networkHandler.sendChatMessage("[friendship]-------- Status --------");
-			client.player.networkHandler.sendChatMessage("[friendship]Health: " + String.format("%.1f", playerHealth) + "/" + String.format("%.1f", playerMaxHealth));
-			client.player.networkHandler.sendChatMessage("[friendship]Food: " + String.format("%.1f", playerFoodLevel) + "/" + String.format("%.1f", playerMaxFoodLevel));
-			client.player.networkHandler.sendChatMessage("[friendship]Location: " + position);
-			client.player.networkHandler.sendChatMessage("[friendship]Effects: ");
-
-			if (client.player.getActiveStatusEffects().isEmpty()) {
-				client.player.networkHandler.sendChatMessage("[friendship] - None");
-			} else {
-				for (StatusEffectInstance effectInstance : client.player.getActiveStatusEffects().values()) {
-					StatusEffect effect = effectInstance.getEffectType();
-					String effectName = Objects.requireNonNull(Registries.STATUS_EFFECT.getId(effect)).toString();
-					int amplifier = effectInstance.getAmplifier();
-					int duration = effectInstance.getDuration();
-
-					client.player.networkHandler.sendChatMessage("[friendship] - Name: " + effectName +
-							", Level: " + (amplifier + 1) +
-							", Duration: " + duration / 20 + "s");
-				}
-			}
-
-			client.player.networkHandler.sendChatMessage("[friendship]------------------------");
-
-
-		} else {
-			System.out.println("[friendship]Error: Player is null when trying to use command.");
-		}
-	}
-
-	// 处理llm指令
-	private void handleLlmCommand(MinecraftClient client, String inputString) {
-		String question = inputString.substring(inputString.indexOf(CMD_LLM) + CMD_LLM.length());
-
-		CompletableFuture.runAsync(() -> {
-			client.player.networkHandler.sendChatMessage(callLLMAPI(question));
-		});
-	}
-
-	// 发送llm
-	public String callLLMAPI(String userInput) {
-		try {
-			URL url = new URL(LLM_API_URL);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestMethod("POST");
-			connection.setRequestProperty("Content-Type", "application/json");
-			connection.setRequestProperty("Authorization", "Bearer " + LLM_API_KEY);
-			connection.setDoOutput(true);
-
-			String jsonInput = "{"
-					+ "\"model\": \"" + LLM_MODEL +"\","
-					+ "\"messages\": ["
-					+ "  {"
-					+ "    \"role\": \"system\","
-					+ "    \"content\": \"" + escapeJson(LLM_PROMPT) + "\""
-					+ "  },"
-					+ "  {"
-					+ "    \"role\": \"user\","
-					+ "    \"content\": \"" + escapeJson(userInput) + "\""
-					+ "  }"
-					+ "]"
-					+ "}";
-
-			try (OutputStream os = connection.getOutputStream()) {
-				byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);
-				os.write(input, 0, input.length);
-			}
-
-			int responseCode = connection.getResponseCode();
-			if (responseCode == 200) {
-				try (BufferedReader br = new BufferedReader(
-						new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-					StringBuilder response = new StringBuilder();
-					String line;
-					while ((line = br.readLine()) != null) {
-						response.append(line);
-					}
-					return parseResponse(response.toString());
-				}
-			} else {
-				return "API 错误，状态码：" + responseCode;
-			}
-		} catch (IOException e) {
-			return "请求失败：" + e.getMessage();
-		}
-	}
-
-	// 转义特殊字符
-	private String escapeJson(String input) {
-		return input.replace("\\", "\\\\")
-				.replace("\"", "\\\"")
-				.replace("\n", "\\n");
-	}
-
-	// 解析响应
-	private String parseResponse(String jsonResponse) {
-		try {
-			JsonObject root = JsonParser.parseString(jsonResponse).getAsJsonObject();
-			JsonArray choices = root.getAsJsonArray("choices");
-			if (choices.size() == 0) return "未收到有效响应";
-
-			JsonObject message = choices.get(0).getAsJsonObject()
-					.getAsJsonObject("message");
-			return message.get("content").getAsString();
-		} catch (Exception e) {
-			return "解析响应失败";
-		}
-	}
-
-	// 处理llm设置
-	private void handleUrlOption(MinecraftClient client, String inputString) {
-		LLM_API_URL = inputString.substring(inputString.indexOf(OPTION_SETLLMURL) + OPTION_SETLLMURL.length());
-		client.player.networkHandler.sendChatMessage("[friendship]Set llm url.");
-	}
-	private void handleKeyOption(MinecraftClient client, String inputString) {
-		LLM_API_KEY = inputString.substring(inputString.indexOf(OPTION_SETLLMKEY) + OPTION_SETLLMKEY.length());
-		client.player.networkHandler.sendChatMessage("[friendship]Set llm key.");
-	}
-	private void handlePromptOption(MinecraftClient client, String inputString) {
-		LLM_PROMPT = inputString.substring(inputString.indexOf(OPTION_SETLLMPROMPT) + OPTION_SETLLMPROMPT.length());
-		client.player.networkHandler.sendChatMessage("[friendship]Set llm prompt.");
-	}
-	private void handleModelOption(MinecraftClient client, String inputString) {
-		LLM_MODEL = inputString.substring(inputString.indexOf(OPTION_SETLLMMODEL) + OPTION_SETLLMMODEL.length());
-		client.player.networkHandler.sendChatMessage("[friendship]Set llm model.");
+		LOGGER.info("Command handlers registered.");
 	}
 }
