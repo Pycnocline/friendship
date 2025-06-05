@@ -122,6 +122,8 @@ public class FriendshipClient implements ClientModInitializer {
 		commandManager.register(new AutorespawnCommandHandler(this.status, this.echo));
 		commandManager.register(new AutoeatCommandHandler(this.action, this.echo));
 		commandManager.register(new LlmCommandHandler(this.llm, this.inv, this.echo, this.status));
+		commandManager.register(new AutoLookCommandHandler(this.action, this.echo));
+		commandManager.register(new AutoDefendCommandHandler(this.action, this.echo));
 
 		LOGGER.info("Command handlers registered.");
 	}
