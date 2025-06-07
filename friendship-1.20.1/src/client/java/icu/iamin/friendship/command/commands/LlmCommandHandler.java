@@ -105,7 +105,6 @@ public class LlmCommandHandler implements FriendshipCommand {
 
                 String cleanedTextForChat = modifiedText.replace("\n", " ").replace("\r", " ").trim();
 
-                LOGGER.info("Text part from LLM (after cleaning for chat): [" + cleanedTextForChat + "]");
 
                 if (!cleanedTextForChat.isEmpty()) {
                     echo.echoChatMessage(cleanedTextForChat, client);
@@ -119,7 +118,6 @@ public class LlmCommandHandler implements FriendshipCommand {
         Pattern pattern = Pattern.compile("\\[(.*?)\\]");
         Matcher matcher = pattern.matcher(text);
 
-        // 查找所有匹配项
         while (matcher.find()) {
             results.add(matcher.group(1));
         }

@@ -12,9 +12,9 @@ public class Echo {
 
     public void echoChatMessage(String echoString, MinecraftClient client) {
         LOGGER.info("Feature activated: Echo-echoChatMessage");
-        String prefix = "[Friendship] ";
+        String prefix = "[Friendship]";
 
-        client.player.networkHandler.sendChatMessage(prefix + echoString);
+        client.player.networkHandler.sendChatMessage(prefix + " " + echoString);
     }
 
     public void echoCommand(String echoString, MinecraftClient client) {

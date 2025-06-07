@@ -5,15 +5,12 @@ import icu.iamin.friendship.features.Action;
 import icu.iamin.friendship.features.Echo;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 
 public class AutoDefendCommandHandler implements FriendshipCommand {
     private final Action action;
     private final Echo echo;
     private boolean isAutoDefendEnabled = false;
-    private MutableText autoDefendStatus;
+    private String autoDefendStatus;
 
     public AutoDefendCommandHandler(Action action, Echo echo) {
         this.action = action;
@@ -41,15 +38,12 @@ public class AutoDefendCommandHandler implements FriendshipCommand {
             }
 
             if (isAutoDefendEnabled) {
-                autoDefendStatus = Text.literal("开启").formatted(Formatting.GREEN);
+                autoDefendStatus = "开启";
             } else {
-                autoDefendStatus = Text.literal("关闭").formatted(Formatting.RED);
+                autoDefendStatus = "关闭";
             }
 
-            MutableText output = Text.literal("自动攻击附近对自身有仇恨的生物设置为：")
-                    .append(autoDefendStatus);
-
-            echo.echoText(output, client);
+            echo.echoChatMessage("自动防御周围的敌对生物：" + autoDefendStatus, client);
         });
     }
 
@@ -78,6 +72,6 @@ public class AutoDefendCommandHandler implements FriendshipCommand {
 
     @Override
     public String getHelp() {
-        return "开/关 尝试自动攻击附近对自身有仇恨的生物。";
+        return "开/关 尝试自动防御周围的敌对生物。";
     }
 }

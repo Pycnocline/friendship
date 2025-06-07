@@ -4,15 +4,12 @@ import icu.iamin.friendship.command.FriendshipCommand;
 import icu.iamin.friendship.features.Action;
 import icu.iamin.friendship.features.Echo;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 
 public class AutoLookCommandHandler implements FriendshipCommand {
     private final Action action;
     private final Echo echo;
     private boolean isAutoLookEnabled = false;
-    private MutableText autoLookStatus;
+    private String autoLookStatus;
 
     public AutoLookCommandHandler(Action action, Echo echo) {
         this.action = action;
@@ -40,15 +37,12 @@ public class AutoLookCommandHandler implements FriendshipCommand {
             }
 
             if (isAutoLookEnabled) {
-                autoLookStatus = Text.literal("开启").formatted(Formatting.GREEN);
+                autoLookStatus = "开启";
             } else {
-                autoLookStatus = Text.literal("关闭").formatted(Formatting.RED);
+                autoLookStatus = "关闭";
             }
 
-            MutableText output = Text.literal("自动看向附近生物设置为：")
-                            .append(autoLookStatus);
-
-            echo.echoText(output, client);
+            echo.echoChatMessage("自动看向周围的生物：" + autoLookStatus, client);
         });
     }
 

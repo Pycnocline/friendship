@@ -1,12 +1,16 @@
 package icu.iamin.friendship.features;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.Monster;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket;
+import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
+import net.minecraft.util.Hand;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -26,7 +30,7 @@ public class Action {
     private static final int ATTACK_COOLDOWN_DURATION = 10;
 
     public boolean eatOffHand(MinecraftClient client) {
-        KeyBinding useKey = MinecraftClient.getInstance().options.useKey;
+        KeyBinding useKey = client.options.useKey;
         if (eatCooldownTicks == 30) {
             useKey.setPressed(false);
         }
@@ -152,11 +156,6 @@ public class Action {
     }
 
     public boolean attack(LivingEntity entity, MinecraftClient client,boolean tryattack) {
-        LOGGER.info(String.valueOf(attackCooldownTicks));
-        if (client.currentScreen != null) {
-            return false;
-        }
-
         if (attackCooldownTicks > 0) {
             attackCooldownTicks--;
             return false;
@@ -164,6 +163,21 @@ public class Action {
 
         if (tryattack) {
             client.interactionManager.attackEntity(client.player, entity);
+
+            if (client.currentScreen != null) {
+                int screenSyncId = -1;
+                screenSyncId = client.player.currentScreenHandler.syncId;
+
+                if (screenSyncId != -1) {
+                    client.getNetworkHandler().sendPacket(new CloseHandledScreenC2SPacket(screenSyncId));
+                }
+            }
+
+            PlayerInteractEntityC2SPacket attackPacket = PlayerInteractEntityC2SPacket.attack(entity, client.player.isSneaking());
+            ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
+            networkHandler.sendPacket(attackPacket);
+            client.player.swingHand(Hand.MAIN_HAND);
+
             attackCooldownTicks = ATTACK_COOLDOWN_DURATION;
             return true;
         }
